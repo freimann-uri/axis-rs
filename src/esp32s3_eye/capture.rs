@@ -1,42 +1,27 @@
+use esp_hal::dma::DmaRxBuffer;
+
 use super::Esp32S3Eye;
 use crate::BoardError;
-use esp_hal::dma::DmaRxBuf;
-use esp_println::println;
+use crate::sensors::Sensor;
 
-impl Esp32S3Eye {
-    pub fn capture(&mut self, rx_buf: DmaRxBuf) -> Result<DmaRxBuf, BoardError> {
-        println!("[capture] 0");
-        let camera = self.camera.take().ok_or(BoardError::CaptureTimeout)?;
+impl<S: Sensor> Esp32S3Eye<S> {
+    /// Захватывает один кадр в переданный буфер. Буфер (и память, в которой
+    /// он лежит — внутренняя SRAM или PSRAM) выбирает вызывающий код.
+    pub fn capture<BUF: DmaRxBuffer>(&mut self, buf: BUF) -> Result<BUF::Final, BoardError> {
+        let camera = self.camera.take().ok_or(BoardError::CameraNotAvailable)?;
 
-        println!("[capture] 1");
-        let transfer = match camera.receive(rx_buf) {
-            Ok(t) => t,
-            Err((_dma_err, returned_camera, _returned_buf)) => {
-                self.camera = Some(returned_camera);
-                return Err(BoardError::InitFailed);
+        let transfer = match camera.receive(buf) {
+            Ok(transfer) => transfer,
+            Err((err, camera, _buf)) => {
+                self.camera = Some(camera);
+                return Err(BoardError::DmaTransferError(err));
             }
         };
 
-        println!("[capture] 2");
-        let (dma_result, returned_camera, completed_buf) = transfer.wait();
+        let (result, camera, final_buf) = transfer.wait();
+        self.camera = Some(camera);
 
-        println!("[capture] 3");
-        self.camera = Some(returned_camera);
-
-        println!("[capture] 4");
-        dma_result.map_err(|_| BoardError::DmaTransferError)?;
-
-        // 5. ИНВАЛИДАЦИЯ D-CACHE через ассемблерные примитивы архитектуры чипа
-        // let ptr = completed_buf.as_slice().as_ptr() as usize;
-        // let len = completed_buf.as_slice().len();
-
-        // unsafe {
-        //     let aligned_ptr = ptr & !0x1F;
-        //     let aligned_len = (len + 31) & !0x1F;
-
-        //     xtensa_lx::cache::invalidate_dcache_range(aligned_ptr, aligned_len);
-        // }
-
-        Ok(completed_buf)
+        result.map_err(BoardError::DmaTransferError)?;
+        Ok(final_buf)
     }
 }

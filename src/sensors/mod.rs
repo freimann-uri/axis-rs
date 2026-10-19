@@ -20,4 +20,6 @@ impl<E: embedded_hal::i2c::Error> From<E> for SensorError {
 pub trait Sensor {
     fn new() -> Self;
     fn init(&mut self, i2c: &mut I2c<'_, Blocking>) -> SensorResult<()>;
+    fn set_qqvga(&mut self, i2c: &mut I2c<'_, Blocking>) -> SensorResult<()>;
+    fn set_fullhd(&mut self, i2c: &mut I2c<'_, Blocking>) -> SensorResult<()>;
 }

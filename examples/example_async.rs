@@ -1,8 +1,8 @@
 #![no_std]
 #![no_main]
 
-use cam_rs::Esp32S3Eye;
-use cam_rs::sensors::ov5640::Ov5640;
+use axis_rs::Esp32S3Eye;
+use axis_rs::sensors::ov5640::Ov5640;
 use embassy_executor::Spawner;
 use esp_backtrace as _;
 use esp_hal::timer::timg::TimerGroup;

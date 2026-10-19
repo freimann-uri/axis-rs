@@ -1,35 +1,30 @@
 [package]
-name = "cam-rs"
+name = "axis-rs"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+allocator-api2 = { version = "=0.3.1", default-features = false, features = ["alloc"] }
+critical-section = "=1.2.0"
 # aligned = "=0.4.3"
-# base64 = { version = "=0.23.1", default-features = false, features = ["alloc"] }
-embassy-executor = "=0.10.0"
 embedded-hal = "=1.0.0"
+esp-alloc = "=0.11.0"
 esp-backtrace = { version = "=0.20.0", features = ["panic-handler", "println"] }
 esp-bootloader-esp-idf = "=0.6.0"
-esp-hal = { version = "=1.2.0", features = ["log-04", "unstable"] }
+esp-hal = { version = "=1.2.0", features = ["unstable", "log-04"] }
+esp-hal-procmacros = { version = "=0.23.0", package = "esp-hal-procmacros" }
 esp-println = { version = "=0.18.0", features = ["log-04"] }
-esp-rtos = { version = "=0.4.0", features = ["embassy"] }
 log = "=0.4.34"
 
 [features]
 default = ["esp32s3"]
 
-esp32 = [
-    "esp-backtrace/esp32",
-    "esp-bootloader-esp-idf/esp32",
-    "esp-hal/esp32",
-    "esp-println/esp32",
-]
 esp32s3 = [
+    "esp-alloc/esp32s3",
     "esp-backtrace/esp32s3",
     "esp-bootloader-esp-idf/esp32s3",
     "esp-hal/esp32s3",
     "esp-println/esp32s3",
-    "esp-rtos/esp32s3",
 ]
 
 [profile.dev]
@@ -46,7 +41,3 @@ lto = "thin"
 panic = "abort"
 codegen-units = 1
 debug = false
-
-[patch.crates-io]
-esp-hal = { path = "/home/iurii/$/projects/esp-hal/esp-hal" }
-esp-rom-sys = { path = "/home/iurii/$/projects/esp-hal/esp-rom-sys" }

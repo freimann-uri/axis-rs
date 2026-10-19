@@ -5,8 +5,6 @@ use esp_hal::dma::{DmaDescriptor, DmaRxBuf, aligned::DmaAlignedMut};
 const FRAME_SIZE: usize = 160 * 120 * 2;
 const DESC_COUNT: usize = (FRAME_SIZE + 4031) / 4032;
 
-// Двойная буферизация: пока предыдущий кадр ещё читается вызывающим
-// кодом, следующий кадр можно снимать в другой буфер.
 static mut FRAME_POOL_A: [u8; FRAME_SIZE] = [0; FRAME_SIZE];
 static mut FRAME_POOL_B: [u8; FRAME_SIZE] = [0; FRAME_SIZE];
 static mut DESCS_A: [DmaDescriptor; DESC_COUNT] = [DmaDescriptor::EMPTY; DESC_COUNT];
@@ -39,12 +37,13 @@ impl Esp32S3Eye {
             lcd_cam_regs.cam_ctrl().read().cam_vs_eof_en().bit()
         );
 
-        let mut transfer = camera.receive(rx_buf).map_err(|_| BoardError::InitFailed)?;
+        let transfer = camera.receive(rx_buf).map_err(|_| BoardError::InitFailed)?;
 
         transfer
             .wait_for_frame()
             .await
-            .map_err(|_| BoardError::CaptureTimeout)?;
+            // .map_err(BoardError::DmaTransferError)?;
+            .unwrap();
 
         let (camera, buf) = transfer.stop();
         self.camera = Some(camera);

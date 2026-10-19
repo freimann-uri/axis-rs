@@ -5,6 +5,7 @@ use esp_hal::i2c::master::I2c;
 use esp_println::println;
 
 const I2C_ADDR: u8 = 0x3C;
+const FORMAT_RGB565: &[[u16; 2]] = &[[0x501F, 0x01], [0x4300, 0x61]];
 
 pub struct Ov5640 {
     // публичные поля состояния, юзер читает/пишет напрямую
@@ -204,6 +205,106 @@ impl Sensor for Ov5640 {
         // i2c.write(0x3C, &[0x30, 0x17, 0xFF])?;
         // i2c.write(0x3C, &[0x30, 0x08, 0x02])?;
 
+        Ok(())
+    }
+
+    fn set_qqvga(&mut self, i2c: &mut I2c<'_, Blocking>) -> SensorResult<()> {
+        const FORMAT_RGB565: &[[u16; 2]] = &[[0x501F, 0x01], [0x4300, 0x61]];
+
+        const QQVGA_WINDOW: &[[u16; 2]] = &[
+            [0x3800, 0x00],
+            [0x3801, 0x00], // X start
+            [0x3802, 0x00],
+            [0x3803, 0x00], // Y start
+            [0x3804, 0x0A],
+            [0x3805, 0x3F], // X end = 2623
+            [0x3806, 0x07],
+            [0x3807, 0x9F], // Y end = 1951
+            [0x3808, 0x00],
+            [0x3809, 0xA0], // output width = 160
+            [0x380A, 0x00],
+            [0x380B, 0x78], // output height = 120
+            [0x380C, 0x08],
+            [0x380D, 0x0C], // total X = 2060
+            [0x380E, 0x03],
+            [0x380F, 0xD8], // total Y = 984
+            [0x3810, 0x00],
+            [0x3811, 0x10], // offset X = 16
+            [0x3812, 0x00],
+            [0x3813, 0x08], // offset Y = 8
+            [0x3820, 0x01], // reg20 (binning, no flip)
+            [0x3821, 0x01], // reg21 (binning, no mirror)
+            [0x4514, 0xAA],
+            [0x4520, 0x0B],
+            [0x3814, 0x31], // X increment
+            [0x3815, 0x31], // Y increment
+        ];
+
+        const QQVGA_PLL: &[[u16; 2]] = &[
+            [0x3039, 0x00],
+            [0x3034, 0x1A],
+            [0x3035, 0x11],
+            [0x3036, 0x14],
+            [0x3037, 0x01],
+            [0x3108, 0x16],
+            [0x3824, 0x08],
+            [0x460C, 0x22],
+            [0x3103, 0x13],
+        ];
+
+        for entry in FORMAT_RGB565.iter().chain(QQVGA_WINDOW).chain(QQVGA_PLL) {
+            let bytes = [(entry[0] >> 8) as u8, entry[0] as u8, entry[1] as u8];
+            i2c.write(I2C_ADDR, &bytes)?;
+        }
+        Ok(())
+    }
+
+    fn set_fullhd(&mut self, i2c: &mut I2c<'_, Blocking>) -> SensorResult<()> {
+        const FULLHD_WINDOW: &[[u16; 2]] = &[
+            [0x3800, 0x00],
+            [0x3801, 0x00], // X start = 0
+            [0x3802, 0x00],
+            [0x3803, 0xF0], // Y start = 240
+            [0x3804, 0x0A],
+            [0x3805, 0x3F], // X end = 2623
+            [0x3806, 0x06],
+            [0x3807, 0xAF], // Y end = 1711
+            [0x3808, 0x07],
+            [0x3809, 0x80], // output width = 1920
+            [0x380A, 0x04],
+            [0x380B, 0x38], // output height = 1080
+            [0x380C, 0x0B],
+            [0x380D, 0x1C], // total X = 2844 (без биннинга — полное значение)
+            [0x380E, 0x05],
+            [0x380F, 0xD0], // total Y = 1488
+            [0x3810, 0x00],
+            [0x3811, 0x20], // offset X = 32
+            [0x3812, 0x00],
+            [0x3813, 0x10], // offset Y = 16
+            [0x3820, 0x40], // reg20 (без биннинга)
+            [0x3821, 0x00], // reg21 (без биннинга)
+            [0x4514, 0x88], // normal, без биннинга
+            [0x4520, 0x10],
+            [0x3814, 0x11], // X increment (без биннинга: odd=1, even=1)
+            [0x3815, 0x11], // Y increment
+        ];
+
+        const FULLHD_PLL: &[[u16; 2]] = &[
+            [0x3039, 0x00],
+            [0x3034, 0x1A],
+            [0x3035, 0x11],
+            [0x3036, 0x0A], // multiplier = 10
+            [0x3037, 0x02], // pre_div = 2
+            [0x3108, 0x16],
+            [0x3824, 0x02], // pclk_div = 2
+            [0x460C, 0x22],
+            [0x3103, 0x13],
+        ];
+
+        for entry in FORMAT_RGB565.iter().chain(FULLHD_WINDOW).chain(FULLHD_PLL) {
+            let bytes = [(entry[0] >> 8) as u8, entry[0] as u8, entry[1] as u8];
+            i2c.write(I2C_ADDR, &bytes)?;
+        }
         Ok(())
     }
 }

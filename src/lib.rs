@@ -10,9 +10,10 @@ pub use sensors::SensorError;
 pub enum BoardError {
     Sensor(SensorError),
     InitFailed,
+    CameraNotAvailable,
     ChipInitFailed,
     CaptureTimeout,
-    DmaTransferError,
+    DmaTransferError(esp_hal::dma::DmaError),
 }
 
 pub type BoardResult<T> = Result<T, BoardError>;
