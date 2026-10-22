@@ -1,4 +1,4 @@
-use crate::sensors::{Sensor, SensorResult};
+use crate::sensors::{Resolution, Sensor, SensorResult};
 use esp_hal::Blocking;
 use esp_hal::delay::Delay;
 use esp_hal::i2c::master::I2c;
@@ -7,8 +7,58 @@ use esp_println::println;
 const I2C_ADDR: u8 = 0x3C;
 const FORMAT_RGB565: &[[u16; 2]] = &[[0x501F, 0x01], [0x4300, 0x61]];
 
-pub struct Ov5640 {
-    // публичные поля состояния, юзер читает/пишет напрямую
+pub struct Ov5640 {}
+
+struct Win {
+    mw: u16,
+    mh: u16,
+    sx: u16,
+    sy: u16,
+    ex: u16,
+    ey: u16,
+    ox: u16,
+    oy: u16,
+    tx: u16,
+    ty: u16,
+}
+// строки ratio_table из ov5640_settings.h
+const RATIO_4X3: Win = Win {
+    mw: 2560,
+    mh: 1920,
+    sx: 0,
+    sy: 0,
+    ex: 2623,
+    ey: 1951,
+    ox: 32,
+    oy: 16,
+    tx: 2844,
+    ty: 1968,
+};
+const RATIO_16X9: Win = Win {
+    mw: 2560,
+    mh: 1440,
+    sx: 0,
+    sy: 240,
+    ex: 2623,
+    ey: 1711,
+    ox: 32,
+    oy: 16,
+    tx: 2844,
+    ty: 1488,
+};
+
+fn w8(i2c: &mut I2c<'_, Blocking>, reg: u16, v: u8) -> SensorResult<()> {
+    i2c.write(I2C_ADDR, &[(reg >> 8) as u8, reg as u8, v])?;
+    Ok(())
+}
+fn w16(i2c: &mut I2c<'_, Blocking>, reg: u16, v: u16) -> SensorResult<()> {
+    w8(i2c, reg, (v >> 8) as u8)?;
+    w8(i2c, reg + 1, v as u8)
+}
+fn r8(i2c: &mut I2c<'_, Blocking>, reg: u16) -> SensorResult<u8> {
+    let mut b = [0u8];
+    i2c.write_read(I2C_ADDR, &[(reg >> 8) as u8, reg as u8], &mut b)?;
+    Ok(b[0])
 }
 
 impl Sensor for Ov5640 {
@@ -40,6 +90,7 @@ impl Sensor for Ov5640 {
             [0x3020, 0xC3], // DRIVE_CAPABILITY
             [0x3021, 0x21], // CLOCK_POL_CONTROL
             [0x4713, 0x02], // jpg mode select
+            // [0x4713, 0x03],
             [0x5001, 0x83], // ISP_CONTROL_01: turn color matrix, awb and SDE
             // sys reset
             [0x3000, 0x20], // reset MCU
@@ -274,18 +325,18 @@ impl Sensor for Ov5640 {
             [0x380A, 0x04],
             [0x380B, 0x38], // output height = 1080
             [0x380C, 0x0B],
-            [0x380D, 0x1C], // total X = 2844 (без биннинга — полное значение)
+            [0x380D, 0x1C], // total X = 2844
             [0x380E, 0x05],
             [0x380F, 0xD0], // total Y = 1488
             [0x3810, 0x00],
             [0x3811, 0x20], // offset X = 32
             [0x3812, 0x00],
             [0x3813, 0x10], // offset Y = 16
-            [0x3820, 0x40], // reg20 (без биннинга)
-            [0x3821, 0x00], // reg21 (без биннинга)
-            [0x4514, 0x88], // normal, без биннинга
+            [0x3820, 0x40], // reg20
+            [0x3821, 0x00], // reg21
+            [0x4514, 0x88], // normal,
             [0x4520, 0x10],
-            [0x3814, 0x11], // X increment (без биннинга: odd=1, even=1)
+            [0x3814, 0x11], // X increment
             [0x3815, 0x11], // Y increment
         ];
 
@@ -304,6 +355,91 @@ impl Sensor for Ov5640 {
         for entry in FORMAT_RGB565.iter().chain(FULLHD_WINDOW).chain(FULLHD_PLL) {
             let bytes = [(entry[0] >> 8) as u8, entry[0] as u8, entry[1] as u8];
             i2c.write(I2C_ADDR, &bytes)?;
+        }
+        Ok(())
+    }
+
+    fn set_jpeg(
+        &mut self,
+        i2c: &mut I2c<'_, Blocking>,
+        res: Resolution,
+        qscale: u8,
+    ) -> SensorResult<()> {
+        let (w, h) = res.size();
+        let win = match res {
+            Resolution::Hd720 | Resolution::FullHd => RATIO_16X9,
+            _ => RATIO_4X3,
+        };
+
+        // 1. sensor_fmt_jpeg
+        for (r, v) in [
+            (0x501Fu16, 0x00u8),
+            (0x4300, 0x30),
+            (0x3002, 0x00),
+            (0x3006, 0xFF),
+            (0x471C, 0x50),
+        ] {
+            w8(i2c, r, v)?;
+        }
+
+        // 2. окно (set_framesize)
+        let binning = w <= win.mw / 2 && h <= win.mh / 2;
+        let scale = !((w == win.mw && h == win.mh) || (w == win.mw / 2 && h == win.mh / 2));
+        w16(i2c, 0x3800, win.sx)?;
+        w16(i2c, 0x3802, win.sy)?;
+        w16(i2c, 0x3804, win.ex)?;
+        w16(i2c, 0x3806, win.ey)?;
+        w16(i2c, 0x3808, w)?;
+        w16(i2c, 0x380A, h)?;
+        if !binning {
+            w16(i2c, 0x380C, win.tx)?;
+            w16(i2c, 0x380E, win.ty)?;
+            w16(i2c, 0x3810, win.ox)?;
+            w16(i2c, 0x3812, win.oy)?;
+        } else {
+            let tx = if w > 920 { win.tx - 200 } else { 2060 };
+            w16(i2c, 0x380C, tx)?;
+            w16(i2c, 0x380E, win.ty / 2)?;
+            w16(i2c, 0x3810, win.ox / 2)?;
+            w16(i2c, 0x3812, win.oy / 2)?;
+        }
+        let isp = r8(i2c, 0x5001)?;
+        w8(i2c, 0x5001, if scale { isp | 0x20 } else { isp & !0x20 })?;
+
+        // 3. set_image_options (без mirror/flip), JPEG-бит 0x20 в 0x3821
+        let (r20, r21, r4514, r4520, inc) = if !binning {
+            (0x40u8, 0x20u8, 0x88u8, 0x10u8, 0x11u8)
+        } else {
+            (0x01, 0x21, 0xAA, 0x0B, 0x31)
+        };
+        w8(i2c, 0x3820, r20)?;
+        w8(i2c, 0x3821, r21)?;
+        w8(i2c, 0x4514, r4514)?;
+        w8(i2c, 0x4520, r4520)?;
+        w8(i2c, 0x3814, inc)?;
+        w8(i2c, 0x3815, inc)?;
+
+        // 4. PLL для JPEG: set_pll(false, mul, 4, 2, false, 2, true, 4)
+        let mul: u8 = if matches!(res, Resolution::Vga | Resolution::Svga) {
+            180
+        } else {
+            200
+        };
+        w8(i2c, 0x3039, 0x00)?;
+        w8(i2c, 0x3034, 0x1A)?;
+        w8(i2c, 0x3035, 0x41)?; // 0x01 | (sys_div 4 << 4)
+        w8(i2c, 0x3036, mul)?;
+        w8(i2c, 0x3037, 0x02)?; // pre_div 2
+        w8(i2c, 0x3108, 0x26)?; // (pclk_root_div 2 << 4) | 0x06
+        w8(i2c, 0x3824, 0x04)?; // pclk_div 4
+        w8(i2c, 0x460C, 0x22)?;
+        w8(i2c, 0x3103, 0x13)?;
+
+        // 5. set_quality
+        w8(i2c, 0x4407, qscale & 0x3F)?;
+
+        for reg in [0x3002u16, 0x3006, 0x3821, 0x4713, 0x471C, 0x5001] {
+            println!("[sensor] reg {:#06x} = {:#04x}", reg, r8(i2c, reg)?);
         }
         Ok(())
     }

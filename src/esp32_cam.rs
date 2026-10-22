@@ -1,5 +1,3 @@
-// extern crate alloc;
-
 use crate::{BoardError, BoardResult, Frame};
 
 use esp_hal::clock::CpuClock;
@@ -14,22 +12,16 @@ use esp_hal::ledc::{
 use esp_hal::time::Rate;
 use esp_println::println;
 
-// Распиновка AI Thinker ESP32-CAM для OV2640
-const I2C_ADDR: u8 = 0x30; // I2C адрес OV2640
+const I2C_ADDR: u8 = 0x30;
 
-// Регистры для чтения Chip ID OV2640 (требуется переключение на Bank 0)
 const REG_BANK_SEL: u8 = 0xFF;
 const REG_BANK0: u8 = 0x00;
-const CHIP_ID_HIGH_REG: u8 = 0x0A; // Ожидаемое значение: 0x26
-// const CHIP_ID_LOW_REG: u8 = 0x0B; // Ожидаемое значение: 0x42
+const CHIP_ID_HIGH_REG: u8 = 0x0A;
+// const CHIP_ID_LOW_REG: u8 = 0x0B;
 
-// Упрощенная таблица инициализации OV2640.
-// Для полноценной работы (JPEG, нужное разрешение) необходимо использовать
-// полную таблицу из официального драйвера esp32-camera (sensor_regs.h).
 static SENSOR_DEFAULT_REGS: &[(u8, u8)] = &[
-    (REG_BANK_SEL, REG_BANK0), // Переключаемся на Bank 0
-    (0x12, 0x80),              // COM7: Software reset
-                               // (Здесь должны быть остальные регистры настройки формата, частоты и т.д.)
+    (REG_BANK_SEL, REG_BANK0),
+    (0x12, 0x80), // COM7: Software reset
 ];
 
 #[derive(Debug)]
@@ -40,11 +32,7 @@ pub enum Esp32CamError {
     I2sConfigFailed,
 }
 
-pub struct Esp32Cam {
-    // В реальном коде здесь будут храниться дескрипторы I2C и I2S.
-    // Обратите внимание на управление временем жизни (lifetimes) в esp-hal v1.x.
-    // Часто используется тип AnyI2c<'static> для упрощения хранения.
-}
+pub struct Esp32Cam {}
 
 impl Esp32Cam {
     pub fn new() -> Result<Self, Esp32CamError> {
@@ -78,7 +66,6 @@ impl Esp32Cam {
         let delay = Delay::new();
         delay.delay_millis(10);
 
-        // 1. Инициализация I2C для OV2640 (SDA: GPIO 26, SCL: GPIO 27)
         let mut i2c = I2c::new(
             peripherals.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(100)),
@@ -95,7 +82,7 @@ impl Esp32Cam {
         }
         println!("[board] I2C scan done.");
 
-        let reg_bytes = [0x30, 0x0A]; // 16-битный адрес регистра Chip ID
+        let reg_bytes = [0x30, 0x0A];
         let mut chip_id = [0u8; 2];
 
         if i2c.write_read(0x3C, &reg_bytes, &mut chip_id).is_ok() {
@@ -145,25 +132,9 @@ impl Esp32Cam {
         }
         println!("[board] OV2640 basic I2C setup complete!");
 
-        // 4. Настройка захвата данных (КЛЮЧЕВОЕ ОТЛИЧИЕ ОТ ESP32-S3)
-        // Классический ESP32 НЕ имеет периферии LCD_CAM.
-        // Захват данных осуществляется через I2S в параллельном режиме.
         println!("[board] NOTE: Data capture requires I2S parallel mode setup.");
         println!("[board] Pins: XCLK=0, PCLK=22, VSYNC=25, HREF=23");
         println!("[board] Data: D0=5, D1=18, D2=19, D3=21, D4=36, D5=39, D6=34, D7=35");
-
-        /*
-        ЗДЕСЬ ДОЛЖНА БЫТЬ ИНИЦИАЛИЗАЦИЯ I2S:
-        В esp-hal для классического ESP32 это требует настройки I2S в режим
-        параллельного приема (часто через нестандартные конфигурации или прямую
-        запись в регистры, так как высокоуровневый API "Camera" для ESP32 еще
-        не стабилизирован, в отличие от ESP32-S3).
-
-        Если вам нужен стабильный захват кадров (особенно в JPEG),
-        настоятельно рекомендуется перейти на стек:
-        - esp-idf-hal
-        - esp32-camera (официальный C-драйвер, обернутый через esp-idf-sys)
-        */
 
         Ok(Self {})
     }
